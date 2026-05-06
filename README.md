@@ -71,6 +71,16 @@ bun start
 bun src/index.ts serve --port 8080
 ```
 
+`serve` builds a strict route manifest before binding the local server. Route files are mapped to zo.space paths, validated, and rejected early if they would drift from production behavior:
+
+- `routes/index.tsx` -> `/`
+- `routes/about.tsx` -> `/about`
+- `routes/blog/index.tsx` -> `/blog`
+- `routes/api/hello.ts` -> `/api/hello`
+- `routes/api/users/:id.ts` -> `/api/users/:id`
+
+Next.js-style bracket params such as `[id].ts` are intentionally rejected. zo.space uses Hono-style `:id` route params.
+
 ## 🛠️ Local development guide
 
 Developing Zo Spaces locally is incredibly easy and fast thanks to Bun's native on-the-fly execution and automatic reloading.
