@@ -1,0 +1,14 @@
+[
+  {
+    "path": "/",
+    "route_type": "page",
+    "public": true,
+    "code": "import React from \"react\";\n\nexport default function IndexPage() {\n  return (\n    <div className=\"flex flex-col items-center justify-center min-h-screen space-y-4\">\n      <h1 className=\"text-4xl font-extrabold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-green-400 to-blue-500\">\n        Welcome to your Zo Space\n      </h1>\n      <p className=\"text-gray-400 text-lg\">\n        This is an example space route served with local SSR via zopack.\n      </p>\n      <button className=\"px-6 py-2 rounded-full bg-blue-600 hover:bg-blue-700 font-semibold transition-all\">\n        Interact\n      </button>\n    </div>\n  );\n}"
+  },
+  {
+    "path": "/api/hello",
+    "route_type": "api",
+    "public": true,
+    "code": "export default async function handler(c: any) {\n  const name = c.req.query(\"name\") || \"World\";\n  return c.json({\n    message: `Hello, ${name}!`,\n    timestamp: new Date().toISOString(),\n    env_check: process.env.DATABASE_URL ? \"Configured\" : \"Missing\"\n  });\n}"
+  }
+]

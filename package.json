@@ -2,10 +2,10 @@
   "name": "zopack-cli",
   "version": "1.0.0",
   "description": "Standalone single-file Bun CLI for previewing and serving Zo spaces",
-  "main": "index.ts",
+  "main": "src/index.ts",
   "type": "module",
   "scripts": {
-    "start": "bun index.ts"
+    "start": "bun src/index.ts"
   },
   "dependencies": {
     "react": "^19.0.0",
