@@ -1,137 +1,88 @@
 # Zopack CLI
 
-A standalone, powerful **Bun-powered CLI** for packaging, importing, previewing, and server-side rendering (SSR) **Zo Computer** routes.
+A standalone Bun CLI for **packaging**, **importing**, and **locally emulating** Zo Computer spaces — `zopack export`, `zopack import`, and `zopack serve`.
 
-## 🚀 Features
+## Workflow
 
-- **Unified CLI Tool**: One entry point for packaging (`export`), previewing/deploying (`import`), and local hosting (`serve`).
-- **Real-Time SSR (Server-Side Rendering)**: Instantly compiles and renders React/TSX page components on-the-fly to static HTML.
-- **Hono-Like API Routing**: Invokes `.ts` API modules on-the-fly, passing a streamlined Hono-like Context `c`.
-- **Intelligent Package Detection**: Automatic dependency checking (filtering against base `zo.space` packages), Shadcn/AnimateUI component detection, filesystem directory structure extraction, and environment variable secret harvesting.
-
-## 📂 Project structure
-
-```text
-zopack-cli/
-├── src/                        # 🛠️ Core Source Scripts
-│   ├── index.ts                # 🚀 Unified CLI Entrypoint
-│   ├── export.ts               # Core zopack packaging logic
-│   └── import.ts               # Core zopack extraction & plan logic
-│
-├── examples/                   # 📂 Examples Directory
-│   ├── routes/                 # Example UI and API Routes
-│   │   ├── index.tsx           # UI Route (React SSR)
-│   │   └── api/
-│   │       └── hello.ts        # API Route (Hono-like endpoint)
-│   ├── routes.json             # Example routes JSON descriptor
-│   └── example-pack.zopack.md  # Generated example pack file
-│
-├── package.json                # Project manifest
-└── SKILL.md                    # Zo Agent Skill document
+```
+zo.space (export) → .zopack.md → GitHub → Clone locally → zopack serve
 ```
 
-## 📦 Usage
+1. **export** — Package your live zo.space routes into a `.zopack.md` file
+2. **push to GitHub** — Share or backup the pack
+3. **clone locally** — `git clone` the repo onto your machine
+4. **import** — Parse the `.zopack.md` and write routes to `routes/`
+5. **serve** — Run a production-faithful local emulator
 
-### 1. Installation
-Ensure you have [Bun](https://bun.sh/) installed locally, then set up the workspace:
+## Install
+
 ```bash
-# Clone the repository
-git clone https://github.com/EthanThatOneKid/zopack-cli.git
-cd zopack-cli
-
-# Install dependencies
 bun install
 ```
 
-### 2. Export / package routes (`export`)
-Pack your space routes into a single `.zopack.md` file:
+## Commands
+
+### `zopack export`
+
 ```bash
-# Pipes a routes JSON descriptor into the CLI to generate a package
-cat examples/routes.json | bun src/index.ts export --name "example-pack" --description "An example pack" --output "examples/example-pack.zopack.md"
+echo '<routes json>' | bun src/index.ts export --name my-space
 ```
 
-### 3. Import / preview pack (`import`)
-Preview a `.zopack.md` deployment plan before deploying:
+Reads a JSON array of route objects:
+```json
+[{ "path": "/api/hello", "route_type": "api", "public": true, "code": "..." }]
+```
+
+### `zopack import`
+
 ```bash
-bun src/index.ts import --file "examples/example-pack.zopack.md" --preview
+# Preview the plan
+bun src/index.ts import --file my-space.zopack.md --preview
+
+# Output full JSON plan (for Zo agent consumption)
+bun src/index.ts import --file my-space.zopack.md --handle etok
 ```
 
-Generate the full JSON deployment plan for the Zo space system to consume:
+### `zopack serve` — Local zo.space emulator
+
 ```bash
-bun src/index.ts import --file "examples/example-pack.zopack.md"
+bun src/index.ts serve              # default port 5173
+bun src/index.ts serve --port 8080  # custom port
 ```
 
-### 4. Serve / local SSR preview (`serve`)
-Run the Zo Space Bun SSR server locally. By default, it will check for `./routes` and fallback automatically to `./examples/routes` for a plug-and-play development experience:
+Serves the local `routes/` directory with production-faithful behavior:
+
+| File | Route |
+|------|-------|
+| `routes/index.tsx` | `/` |
+| `routes/about.tsx` | `/about` |
+| `routes/blog/index.tsx` | `/blog` |
+| `routes/api/hello.ts` | `/api/hello` |
+| `routes/api/users/:id.ts` | `/api/users/:id` |
+
+**Route restrictions:**
+- `:param` dynamic segments only — `[param]` (Next.js style) is rejected
+- Duplicate route paths are rejected at startup
+- API routes use real Hono (matches zo.space production exactly)
+- Page routes are bundled with React Router for client-side routing
+
+## Development
+
 ```bash
-# Starts the server on default port 5173
-bun start
-
-# Or start on a custom port
-bun src/index.ts serve --port 8080
+bun test   # run route manifest tests
+bun start  # start serve (alias: bun src/index.ts serve)
 ```
 
-`serve` builds a strict route manifest before binding the local server. Route files are mapped to zo.space paths, validated, and rejected early if they would drift from production behavior:
+## Project structure
 
-- `routes/index.tsx` -> `/`
-- `routes/about.tsx` -> `/about`
-- `routes/blog/index.tsx` -> `/blog`
-- `routes/api/hello.ts` -> `/api/hello`
-- `routes/api/users/:id.ts` -> `/api/users/:id`
-
-Next.js-style bracket params such as `[id].ts` are intentionally rejected. zo.space uses Hono-style `:id` route params.
-
-## 🛠️ Local development guide
-
-Developing Zo Spaces locally is incredibly easy and fast thanks to Bun's native on-the-fly execution and automatic reloading.
-
-### 1. Adding a new UI route (React SSR)
-Simply create a React component file inside `examples/routes/` with a default export. For example, create `examples/routes/dashboard.tsx`:
-```tsx
-import React from "react";
-
-export default function Dashboard() {
-  return (
-    <div className="p-8">
-      <h1 className="text-2xl font-bold">Local Dashboard</h1>
-      <p>This is a new page rendered live via local SSR!</p>
-    </div>
-  );
-}
 ```
-* Access it instantly at `http://localhost:5173/dashboard`. Any edits are picked up instantly on every reload!
-
-### 2. Adding a new API route
-Create a `.ts` file inside `examples/routes/api/` with a default handler function accepting a Hono-like Context `c`. For example, create `examples/routes/api/users.ts`:
-```typescript
-export default function handler(c: any) {
-  return c.json({
-    users: [
-      { id: 1, name: "Alice" },
-      { id: 2, name: "Bob" }
-    ]
-  });
-}
+src/
+  index.ts              # CLI entrypoint (export, import, serve commands)
+  export.ts             # export command logic
+  import.ts             # import command logic
+  route-manifest.ts     # route discovery + :param validation + duplicate detection
+  route-manifest.test.ts
+  serve.ts              # production-faithful local server (Hono + React Router)
+examples/
+  routes/               # example routes (index.tsx + api/hello.ts)
 ```
-* Access it instantly at `http://localhost:5173/api/users`.
-
-### 3. Emulating Zo agent packaging & deployment
-We provide an interactive script that emulates the complete Zo Agent export/import flow locally:
-```bash
-bun examples/emulate.ts
-```
-This script queries your local routes, packages them using `exportPack` into a `.zopack.md` file, performs a security static analysis, and simulates deploying them back onto the filesystem substrate!
-
-## 🎯 Verification
-
-Test your local running SSR server:
-- **UI Route (SSR)**: Open `http://localhost:5173/` in your browser.
-- **API Route**: Open or fetch `http://localhost:5173/api/hello?name=Ethan`.
-  ```json
-  {"message":"Hello, Ethan!","timestamp":"2026-05-06T17:22:14.041Z","env_check":"Missing"}
-  ```
-
-## 📄 Acknowledgements
-
-The core import/export packaging logic and specification are based on the original:
-- [Original Zo Community zopack skill](https://github.com/zocomputer/skills/blob/main/Community/zopack/SKILL.md)
