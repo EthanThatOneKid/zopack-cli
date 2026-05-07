@@ -5,3 +5,6 @@ node_modules/
 .vscode/
 *.local
 examples/emulated-pack.zopack.md
+
+# Live-synced routes from zo.space (use: bun src/sync.ts --force to re-pull)
+routes/
