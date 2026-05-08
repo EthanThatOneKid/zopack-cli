@@ -10,7 +10,7 @@ Zo (create space + repo) → GitHub repo → Clone locally → import → serve 
 
 1. **create in Zo** — create the space and the GitHub repo from Zo, using natural language if you want
 2. **clone locally** — move to a physical machine and clone the repo with `git clone`
-3. **import** — revive the Zo space route files locally with `zopack import`
+3. **import** — parse the pack locally with `zopack import`, then materialize the matching `routes/` files
 4. **serve** — run the imported routes locally with `zopack serve`
 5. **edit locally** — make surgical source changes in `routes/`
 6. **push** — commit and push the local changes back to GitHub
@@ -49,17 +49,20 @@ If you prefer HTTPS, use that instead. The point is to get the repo onto a machi
 
 ### 3. Restore the Zo space source locally
 
-Run `zopack import` on the exported pack file to recreate the space routes in `routes/` for local development:
+Run `zopack import` from a checkout of this CLI repo, or point at this repo explicitly from your project clone:
 
 ```bash
-bun src/index.ts import --file <pack-name>.zopack.md --handle <your-handle>
+bun /home/workspace/code/github.com/EthanThatOneKid/zopack-cli/src/index.ts import --file <pack-name>.zopack.md --handle <your-handle> --preview
 ```
 
-Use `--preview` first if you want to inspect the import plan before writing anything:
+That command prints a JSON plan. It does not write files by itself, so use the plan to create the matching `routes/` files in your project repo.
 
-```bash
-bun src/index.ts import --file <pack-name>.zopack.md --handle <your-handle> --preview
-```
+Route paths map to filenames like this:
+
+- `/` -> `routes/index.tsx`
+- `/about` -> `routes/about.tsx`
+- `/zo-space-10print` -> `routes/zo-space-10print.tsx`
+- `/api/hello` -> `routes/api/hello.ts`
 
 At this point, the repo should contain the route files you need to work on locally.
 
@@ -83,6 +86,8 @@ Example flow:
 # edit routes/index.tsx
 bun src/index.ts serve
 ```
+
+If you see React hook errors in a demo page, simplify the component to a plain render first. This repo's local emulator is happiest when the route is straightforward and hook-free.
 
 Verify the result locally, then commit it.
 
@@ -129,10 +134,10 @@ Reads a JSON array of route objects:
 
 ```bash
 # Preview the plan
-bun src/index.ts import --file my-space.zopack.md --preview
+bun /home/workspace/code/github.com/EthanThatOneKid/zopack-cli/src/index.ts import --file my-space.zopack.md --preview
 
 # Output full JSON plan for local or automated use
-bun src/index.ts import --file my-space.zopack.md --handle etok
+bun /home/workspace/code/github.com/EthanThatOneKid/zopack-cli/src/index.ts import --file my-space.zopack.md --handle etok
 ```
 
 ### `zopack serve` — Local zo.space emulator
