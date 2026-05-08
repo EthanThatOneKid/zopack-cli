@@ -8,7 +8,7 @@ routes: 2
 exported: 2026-05-06
 ---
 
-# example-pack
+# Example pack
 
 An example Zo pack containing index and hello routes
 

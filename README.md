@@ -22,11 +22,11 @@ Zo (create space + repo) → GitHub repo → Clone locally → import → serve 
 bun install
 ```
 
-## Local Development Tutorial
+## Local development tutorial
 
 This tutorial is the intended workflow for working on Zo spaces without treating Zo.computer as a lock-in point. The idea is to let Zo do the setup, then do the actual day-to-day source editing on a physical machine, with GitHub as the bridge.
 
-### 1. Create the space and repo in Zo
+### Create space and repository in Zo
 
 Start by telling Zo what you want in plain language. For example:
 
@@ -36,7 +36,7 @@ Create a Zo space for my project and create a GitHub repo for it so we can keep 
 
 Zo should create the space and the repo, then establish the initial project shape you want to work with.
 
-### 2. Clone the repo on a local machine
+### Clone repository on local machine
 
 Move to your physical machine and clone the repo that Zo created:
 
@@ -47,7 +47,7 @@ cd <repo>
 
 If you prefer HTTPS, use that instead. The point is to get the repo onto a machine where you can work even if Zo is temporarily unavailable, offline, or slow.
 
-### 3. Restore the Zo space source locally
+### Restore Zo space source locally
 
 Run `zopack import` from a checkout of this CLI repo, or point at this repo explicitly from your project clone:
 
@@ -66,7 +66,7 @@ Route paths map to filenames like this:
 
 At this point, the repo should contain the route files you need to work on locally.
 
-### 4. Run the imported routes locally
+### Run imported routes locally
 
 Start the local emulator:
 
@@ -76,7 +76,7 @@ bun src/index.ts serve
 
 This gives you a local Zo-like environment where you can edit and verify the route source files without depending on the cloud being available.
 
-### 5. Make a visual or behavior change locally
+### Make visual or behavior changes locally
 
 Edit the route files directly in `routes/`. Keep the changes surgical and source-driven. This is the part where you work like a normal local codebase instead of relying on natural language for every change.
 
@@ -97,7 +97,7 @@ git commit -m "Update Zo space locally"
 git push
 ```
 
-### 6. Go back to Zo and sync the live space
+### Go back to Zo and sync live space
 
 Tell Zo to pull the updated GitHub state and apply it back to the live space. In plain language, something like:
 
@@ -107,7 +107,7 @@ Pull the latest GitHub changes and update the Zo space to match the local edits.
 
 The goal is to keep GitHub and Zo in sync so the local repo remains the durable working copy and Zo remains the live deployment target.
 
-### 7. Repeat as needed
+### Repeat as needed
 
 Once this loop is established, you can keep moving back and forth:
 
@@ -140,7 +140,7 @@ bun /home/workspace/code/github.com/EthanThatOneKid/zopack-cli/src/index.ts impo
 bun /home/workspace/code/github.com/EthanThatOneKid/zopack-cli/src/index.ts import --file my-space.zopack.md --handle etok
 ```
 
-### `zopack serve` — Local zo.space emulator
+### `zopack serve` local emulator
 
 ```bash
 bun src/index.ts serve              # default port 5173
