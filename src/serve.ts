@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "fs";
-import { dirname, join } from "path";
+import { basename, dirname, join, resolve } from "path";
 import { fileURLToPath } from "url";
 import { createHash } from "crypto";
 import { Hono } from "hono";
@@ -22,6 +22,17 @@ interface ServeOptions {
 const JS_CONTENT_TYPE = "text/javascript; charset=UTF-8";
 const CLI_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 
+const NODE_BUILTINS = new Set([
+  "assert", "buffer", "child_process", "cluster", "console", "constants",
+  "crypto", "dgram", "dns", "domain", "events", "fs", "http", "https",
+  "module", "net", "os", "path", "perf_hooks", "process", "punycode",
+  "querystring", "readline", "repl", "stream", "string_decoder", "sys",
+  "timers", "tls", "trace_events", "tty", "url", "util", "v8", "vm", "zlib",
+]);
+
+/** Always bundle from zopack-cli so a space repo's node_modules cannot duplicate React. */
+const CLI_PEER_DEPS = new Set(["react", "react-dom", "react-dom/client", "react-router", "react-router-dom"]);
+
 export async function serveZoSpace({ manifest, port }: ServeOptions) {
   const buildDir = join(CLI_ROOT, ".zopack-build", `serve-${process.pid}`);
   const clientBundles = await buildClientBundles(manifest, buildDir);
@@ -33,6 +44,8 @@ export async function serveZoSpace({ manifest, port }: ServeOptions) {
   }
   console.log(`Zo Space local emulator listening on http://localhost:${port}/`);
 
+  const siteLabel = basename(dirname(manifest.routesDir));
+
   Bun.serve({
     port,
     async fetch(req) {
@@ -40,6 +53,10 @@ export async function serveZoSpace({ manifest, port }: ServeOptions) {
 
       if (url.pathname.startsWith("/_zopack/client/")) {
         return serveClientBundle(clientBundles, url.pathname);
+      }
+
+      if (url.pathname === "/favicon.ico") {
+        return serveFavicon();
       }
 
       if (matchRoute(manifest, url.pathname, "api")) {
@@ -56,7 +73,7 @@ export async function serveZoSpace({ manifest, port }: ServeOptions) {
         return new Response(`Missing client bundle for ${pageMatch.entry.path}`, { status: 500 });
       }
 
-      return new Response(renderPageHtml(bundle), {
+      return new Response(renderPageHtml(bundle, siteLabel), {
         headers: { "content-type": "text/html; charset=UTF-8" },
       });
     },
@@ -88,7 +105,7 @@ async function invokeApiRoute(entry: RouteManifestEntry, c: Context): Promise<Re
   }
 }
 
-async function buildClientBundles(manifest: RouteManifest, buildDir: string): Promise<Map<string, ClientBundle>> {
+export async function buildClientBundles(manifest: RouteManifest, buildDir: string): Promise<Map<string, ClientBundle>> {
   rmSync(buildDir, { recursive: true, force: true });
   mkdirSync(buildDir, { recursive: true });
 
@@ -136,8 +153,9 @@ function normalizeRouteJsxRuntime(): BunPlugin {
   return {
     name: "zopack-normalize-jsx-runtime",
     setup(build) {
-      build.onLoad({ filter: /\.[cm]?[jt]sx$/ }, async (args) => {
-        if (args.path.includes("/node_modules/") || args.path.startsWith(CLI_ROOT)) {
+      build.onLoad({ filter: /\.([cm]?tsx?|jsx)$/ }, async (args) => {
+        const normalizedPath = args.path.replaceAll("\\", "/");
+        if (normalizedPath.includes("/node_modules/") || args.path.startsWith(CLI_ROOT)) {
           return undefined;
         }
 
@@ -145,7 +163,7 @@ function normalizeRouteJsxRuntime(): BunPlugin {
         const reactSource = join(CLI_ROOT, "node_modules", "react").replaceAll("\\", "/");
         return {
           contents: `/** @jsxImportSource ${reactSource} */\n${source}`,
-          loader: args.path.endsWith(".jsx") ? "jsx" : "tsx",
+          loader: normalizedPath.endsWith(".jsx") ? "jsx" : "tsx",
         };
       });
     },
@@ -157,10 +175,20 @@ function resolveBareImportsFromCli(): BunPlugin {
     name: "zopack-zo-space-dependencies",
     setup(build) {
       build.onResolve({ filter: /^(?![./]|[A-Za-z]:|file:).+/ }, (args) => {
+        if (/^https?:\/\//.test(args.path) || args.path.startsWith("node:")) {
+          return undefined;
+        }
+        if (NODE_BUILTINS.has(args.path)) {
+          return { path: args.path, external: true };
+        }
+        const resolveFrom = CLI_PEER_DEPS.has(args.path) ? CLI_ROOT : dirname(args.importer);
         try {
-          return { path: Bun.resolveSync(args.path, dirname(args.importer)) };
+          return { path: resolve(Bun.resolveSync(args.path, resolveFrom)) };
         } catch {
-          return { path: Bun.resolveSync(args.path, CLI_ROOT) };
+          if (resolveFrom !== CLI_ROOT) {
+            return { path: resolve(Bun.resolveSync(args.path, CLI_ROOT)) };
+          }
+          return undefined;
         }
       });
     },
@@ -178,9 +206,9 @@ function serveClientBundle(bundles: Map<string, ClientBundle>, pathname: string)
 }
 
 function clientEntrypoint(entry: RouteManifestEntry): string {
+  // Each bundle serves a single page; the server already picked the route.
   return `import React from "react";
 import { createRoot } from "react-dom/client";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
 import Page from ${JSON.stringify(entry.file)};
 
 const root = document.getElementById("root");
@@ -188,37 +216,32 @@ if (!root) {
   throw new Error("Missing #root element");
 }
 
-createRoot(root).render(
-  React.createElement(
-    MemoryRouter,
-    { initialEntries: [window.location.pathname + window.location.search + window.location.hash] },
-    React.createElement(
-      Routes,
-      null,
-      React.createElement(Route, {
-        path: ${JSON.stringify(entry.path)},
-        element: React.createElement(Page),
-      }),
-    ),
-  ),
-);
+createRoot(root).render(React.createElement(Page));
 `;
 }
 
-function renderPageHtml(bundle: ClientBundle): string {
+function renderPageHtml(bundle: ClientBundle, siteLabel: string): string {
   return `<!DOCTYPE html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>etok.zo.space - local</title>
-    <script src="https://cdn.tailwindcss.com"></script>
+    <title>${siteLabel} — local</title>
+    <link rel="icon" href="/favicon.ico" type="image/svg+xml" />
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
   </head>
   <body>
     <div id="root"></div>
     <script type="module" src="${bundle.publicPath}"></script>
   </body>
 </html>`;
+}
+
+function serveFavicon(): Response {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="8" fill="#0a100a"/><circle cx="16" cy="16" r="6" fill="#10b981"/></svg>`;
+  return new Response(svg, {
+    headers: { "content-type": "image/svg+xml; charset=UTF-8" },
+  });
 }
 
 function bundleId(entry: RouteManifestEntry): string {
