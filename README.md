@@ -177,9 +177,8 @@ Serves routes from a `.zopack.md` pack via Bun plugins. Setup directories and fi
 ## Development
 
 ```bash
-bun test   # run pack manifest and serve tests
-bun examples/emulate.ts   # export → import → build round trip
-bun src/index.ts serve --file examples/example-pack.zopack.md
+bun test
+bun start
 ```
 
 ## Project structure
@@ -200,6 +199,5 @@ src/
   serve.ts              # production-faithful local server (Hono + React)
 examples/
   example-pack.zopack.md
-  routes.json           # sample route JSON for export demos
 globals.d.ts            # TypeScript declarations for *.zopack.md imports
 ```

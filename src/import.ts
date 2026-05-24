@@ -26,7 +26,12 @@ export interface ImportOptions {
   preview?: boolean;
 }
 
+function normalizeMarkdown(content: string): string {
+  return content.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+}
+
 export function parseFrontmatter(content: string): { meta: Record<string, string>; body: string } {
+  content = normalizeMarkdown(content);
   const meta: Record<string, string> = {};
   if (!content.startsWith("---")) return { meta, body: content };
 
@@ -74,14 +79,14 @@ export function parseRoutes(body: string): ParsedRoute[] {
     const section = body.slice(sectionStart, sectionEnd);
 
     // Extract the fenced code block
-    const codeMatch = section.match(/```(?:typescript|tsx|ts)\n([\s\S]*?)```/);
+    const codeMatch = section.match(/```(?:typescript|tsx|ts)\r?\n([\s\S]*?)```/);
     if (!codeMatch) continue;
 
     routes.push({
       path: header.path,
       route_type: header.type as "api" | "page",
       public: header.visibility === "public",
-      code: codeMatch[1],
+      code: codeMatch[1].trimEnd(),
     });
   }
 

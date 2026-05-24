@@ -5,7 +5,4 @@ node_modules/
 .idea/
 .vscode/
 *.local
-examples/emulated-pack.zopack.md
 
-# Legacy filesystem routes (pack-based serve is the default workflow)
-routes/
