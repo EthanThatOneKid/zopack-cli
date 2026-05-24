@@ -1,11 +1,12 @@
 import type { ParsedPack } from "./import";
+import type { RouteManifest, RouteManifestEntry } from "./route-types";
 import {
-  collapseIndexSegment,
+  normalizedRoutePath,
   routePattern,
+  validateRouteManifest,
   validateRoutePathSegments,
+  virtualRoutePath,
 } from "./route-utils";
-import type { RouteManifest, RouteManifestEntry } from "./route-manifest";
-import { virtualRoutePath } from "./zopack-plugin";
 
 export function createPackManifest(plan: ParsedPack, packFile: string): RouteManifest {
   const entries = plan.routes.map((route) => packRouteToEntry(route, packFile));
@@ -33,9 +34,7 @@ function packRouteToEntry(
   const segments = route.path.split("/").filter(Boolean);
   validateRoutePathSegments(`${packFile} route ${route.path}`, segments);
 
-  const routeSegments = collapseIndexSegment(segments);
-  const normalizedPath = routeSegments.length === 0 ? "/" : `/${routeSegments.join("/")}`;
-  const path = normalizedPath === "/api" ? "/api/index" : normalizedPath;
+  const path = normalizedRoutePath(segments);
   const { pattern, paramNames } = routePattern(path);
   const virtualFile = virtualRoutePath(route.path, route.route_type);
 
@@ -47,16 +46,4 @@ function packRouteToEntry(
     pattern,
     paramNames,
   };
-}
-
-function validateRouteManifest(entries: RouteManifestEntry[]) {
-  const seen = new Map<string, RouteManifestEntry>();
-  for (const entry of entries) {
-    const key = `${entry.route_type}:${entry.path}`;
-    const existing = seen.get(key);
-    if (existing) {
-      throw new Error(`Ambiguous route "${entry.path}" from ${existing.file} and ${entry.file}`);
-    }
-    seen.set(key, entry);
-  }
 }

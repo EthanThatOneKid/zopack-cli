@@ -191,8 +191,11 @@ src/
   import.ts             # import command logic
   zopack-plugin.ts      # Bun plugin for .zopack.md and virtual route modules
   pack-manifest.ts      # route manifest from ParsedPack
-  route-manifest.ts     # filesystem route discovery (legacy/tests)
+  pack-path.ts          # workspace and pack path resolution
+  route-types.ts        # route manifest types
+  route-manifest.ts     # route matching
   route-utils.ts        # shared route validation helpers
+  serve-pack.ts         # pack loading for local serve
   setup-workspace.ts    # materialize pack Setup section locally
   serve.ts              # production-faithful local server (Hono + React)
 examples/

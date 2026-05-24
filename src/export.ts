@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 
-import { existsSync } from "fs";
+import { resolveWorkspaceDir } from "./pack-path";
 
 export interface RouteInfo {
   path: string;
@@ -18,7 +18,7 @@ export interface ExportOptions {
 
 export async function exportPack(options: ExportOptions, routes: RouteInfo[]): Promise<string> {
   const SPACE_BUILD = "/__substrate/space";
-  const workspaceDir = existsSync("/home/workspace") ? "/home/workspace" : process.cwd();
+  const workspaceDir = resolveWorkspaceDir();
 
   if (routes.length === 0) {
     throw new Error("No routes provided.");
@@ -256,64 +256,4 @@ export async function exportPack(options: ExportOptions, routes: RouteInfo[]): P
   console.error(`  handle templatized: ${detectedHandle || "none found"}`);
 
   return outputPath;
-}
-
-if (import.meta.main) {
-  const { parseArgs } = await import("util");
-  const { values } = parseArgs({
-    args: Bun.argv.slice(2),
-    options: {
-      name: { type: "string", short: "n" },
-      description: { type: "string", short: "d" },
-      author: { type: "string", short: "a" },
-      output: { type: "string", short: "o" },
-      help: { type: "boolean", short: "h" },
-    },
-  });
-
-  if (values.help) {
-    console.log(`zopack export -- Generate a .zopack.md from route data
-
-Usage:
-  echo '<routes json>' | bun export.ts --name <name> [options]
-
-Reads a JSON array of route objects from stdin. Each object:
-  { "path": "/api/foo", "route_type": "api", "public": true, "code": "..." }
-
-Options:
-  -n, --name         Pack name (required)
-  -d, --description  Short description
-  -a, --author       Author handle (default: auto-detected from code)
-  -o, --output       Output file path (default: Inbox/<name>.zopack.md)
-  -h, --help         Show this help`);
-    process.exit(0);
-  }
-
-  if (!values.name) {
-    console.error("Error: --name is required. Use --help for usage.");
-    process.exit(1);
-  }
-
-  const stdin = await Bun.stdin.text();
-  let routes: RouteInfo[];
-  try {
-    routes = JSON.parse(stdin);
-    if (!Array.isArray(routes)) throw new Error("Expected JSON array");
-  } catch (e: any) {
-    console.error(`Error parsing stdin: ${e.message}`);
-    process.exit(1);
-  }
-
-  try {
-    const result = await exportPack({
-      name: values.name,
-      description: values.description,
-      author: values.author,
-      output: values.output,
-    }, routes);
-    console.log(result);
-  } catch (err: any) {
-    console.error(`Export failed: ${err.message}`);
-    process.exit(1);
-  }
 }

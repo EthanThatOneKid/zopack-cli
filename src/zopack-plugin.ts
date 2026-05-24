@@ -2,10 +2,10 @@ import { dirname, join } from "path";
 import { fileURLToPath } from "url";
 import { plugin } from "bun";
 import type { BunPlugin } from "bun";
-import { parsePackFromContent, type ParsedPack, type ParsedRoute } from "./import";
+import { parsePackFromContent, type ParsedPack } from "./import";
+import { routeToVirtualFile, VIRTUAL_ROUTE_SCHEME } from "./route-utils";
 
 const ROUTE_NAMESPACE = "zopack-route";
-const ROUTE_SCHEME = "zopack-route:///";
 const CLI_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 
 let activePack: ParsedPack | null = null;
@@ -26,27 +26,13 @@ export function setWorkspaceRoot(root: string | null): void {
   workspaceRoot = root;
 }
 
-export function routeToVirtualFile(routePath: string, routeType: ParsedRoute["route_type"]): string {
-  if (routePath === "/") {
-    return routeType === "api" ? "api/index.ts" : "index.tsx";
-  }
-
-  const segments = routePath.split("/").filter(Boolean);
-  const suffix = routeType === "api" ? ".ts" : ".tsx";
-  return `${segments.join("/")}${suffix}`;
-}
-
-export function virtualRoutePath(routePath: string, routeType: ParsedRoute["route_type"]): string {
-  return `${ROUTE_SCHEME}${routeToVirtualFile(routePath, routeType)}`;
-}
-
-function findRouteByVirtualPath(path: string): ParsedRoute | undefined {
+function findRouteByVirtualPath(path: string) {
   if (!activePack) {
     throw new Error("No active zopack loaded. Call setActivePack() before importing routes.");
   }
 
-  const virtualFile = path.startsWith(ROUTE_SCHEME)
-    ? path.slice(ROUTE_SCHEME.length)
+  const virtualFile = path.startsWith(VIRTUAL_ROUTE_SCHEME)
+    ? path.slice(VIRTUAL_ROUTE_SCHEME.length)
     : path.replace(/^zopack-route:/, "").replace(/^\/+/, "");
 
   return activePack.routes.find(
@@ -112,4 +98,8 @@ export function registerZopackPlugin(): void {
   if (pluginRegistered) return;
   plugin(createZopackPlugin());
   pluginRegistered = true;
+}
+
+export function zopackBuildPlugins(): BunPlugin[] {
+  return [createZopackPlugin()];
 }

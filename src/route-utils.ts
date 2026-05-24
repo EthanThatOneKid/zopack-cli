@@ -1,3 +1,7 @@
+import type { RouteManifestEntry, RouteType } from "./route-types";
+
+export const VIRTUAL_ROUTE_SCHEME = "zopack-route:///";
+
 export function collapseIndexSegment(segments: string[]): string[] {
   if (segments.length === 1 && segments[0] === "index") return [];
   if (segments.at(-1) === "index") return segments.slice(0, -1);
@@ -26,6 +30,12 @@ export function validateRoutePathSegments(label: string, segments: string[]) {
   }
 }
 
+export function normalizedRoutePath(segments: string[]): string {
+  const routeSegments = collapseIndexSegment(segments);
+  const path = routeSegments.length === 0 ? "/" : `/${routeSegments.join("/")}`.replace(/\/+/g, "/");
+  return path === "/api" ? "/api/index" : path;
+}
+
 export function routePattern(path: string): { pattern: RegExp; paramNames: string[] } {
   if (path === "/") return { pattern: /^\/$/, paramNames: [] };
 
@@ -49,4 +59,30 @@ export function routePattern(path: string): { pattern: RegExp; paramNames: strin
 
 export function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+export function routeToVirtualFile(routePath: string, routeType: RouteType): string {
+  if (routePath === "/") {
+    return routeType === "api" ? "api/index.ts" : "index.tsx";
+  }
+
+  const segments = routePath.split("/").filter(Boolean);
+  const suffix = routeType === "api" ? ".ts" : ".tsx";
+  return `${segments.join("/")}${suffix}`;
+}
+
+export function virtualRoutePath(routePath: string, routeType: RouteType): string {
+  return `${VIRTUAL_ROUTE_SCHEME}${routeToVirtualFile(routePath, routeType)}`;
+}
+
+export function validateRouteManifest(entries: RouteManifestEntry[]) {
+  const seen = new Map<string, RouteManifestEntry>();
+  for (const entry of entries) {
+    const key = `${entry.route_type}:${entry.path}`;
+    const existing = seen.get(key);
+    if (existing) {
+      throw new Error(`Ambiguous route "${entry.path}" from ${existing.file} and ${entry.file}`);
+    }
+    seen.set(key, entry);
+  }
 }

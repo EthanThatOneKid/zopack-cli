@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 
-import { existsSync } from "fs";
+import { resolvePackPath } from "./pack-path";
 
 export interface ParsedRoute {
   path: string;
@@ -160,6 +160,21 @@ export function parseSetup(body: string): { directories: string[]; files: Array<
   return { directories, files, secrets };
 }
 
+export function parseVariables(body: string): Array<{ placeholder: string; description: string }> {
+  const variables: Array<{ placeholder: string; description: string }> = [];
+  const section = body.match(/## Variables\n\n([\s\S]*?)(?=\n## |\n---|$)/);
+  if (!section) return variables;
+
+  for (const line of section[1].trim().split("\n")) {
+    const match = line.match(/\|\s*`(\{\{[^`]+\}\})`\s*\|\s*([^|]+?)\s*\|/);
+    if (match) {
+      variables.push({ placeholder: match[1], description: match[2].trim() });
+    }
+  }
+
+  return variables;
+}
+
 export function replaceVariables(code: string, handle?: string): string {
   if (handle) {
     code = code.replace(/\{\{HANDLE\}\}/g, handle);
@@ -177,6 +192,7 @@ export function parsePackFromContent(raw: string, handle?: string): ParsedPack {
   const routes = parseRoutes(body);
   const { npm, shadcn } = parseDependencies(body);
   const { directories, files, secrets } = parseSetup(body);
+  const variables = parseVariables(body);
   const processedRoutes = routes.map((route) => ({
     ...route,
     code: replaceVariables(route.code, handle),
@@ -190,23 +206,25 @@ export function parsePackFromContent(raw: string, handle?: string): ParsedPack {
     directories,
     files,
     secrets,
-    variables: [],
+    variables,
   };
 }
 
-export async function importPack(options: ImportOptions): Promise<ParsedPack | void> {
-  const workspaceDir = existsSync("/home/workspace") ? "/home/workspace" : process.cwd();
-  const filePath = options.file.startsWith("/") || options.file.includes(":") ? options.file : `${workspaceDir}/${options.file}`;
-
-  const raw = await Bun.file(filePath).text();
-  const plan = parsePackFromContent(raw, options.handle);
-
-  // Check for unreplaced variables
+function collectUnreplacedVariables(routes: ParsedRoute[]): Set<string> {
   const unreplaced = new Set<string>();
-  for (const r of plan.routes) {
-    const matches = r.code.match(/\{\{(\w+)\}\}/g);
-    if (matches) for (const m of matches) unreplaced.add(m);
+  for (const route of routes) {
+    const matches = route.code.match(/\{\{(\w+)\}\}/g);
+    if (matches) {
+      for (const match of matches) unreplaced.add(match);
+    }
   }
+  return unreplaced;
+}
+
+export async function importPack(options: ImportOptions): Promise<ParsedPack | void> {
+  const raw = await Bun.file(resolvePackPath(options.file)).text();
+  const plan = parsePackFromContent(raw, options.handle);
+  const unreplaced = collectUnreplacedVariables(plan.routes);
 
   if (options.preview) {
     console.log(`Pack: ${plan.meta.name || "unknown"}`);
@@ -221,65 +239,24 @@ export async function importPack(options: ImportOptions): Promise<ParsedPack | v
     if (plan.directories.length > 0) console.log(`\nDirectories: ${plan.directories.join(", ")}`);
     if (plan.files.length > 0) console.log(`\nFiles: ${plan.files.map((f) => f.path).join(", ")}`);
     if (plan.secrets.length > 0) console.log(`\nSecrets needed: ${plan.secrets.join(", ")}`);
+    if (plan.variables.length > 0) {
+      console.log(`\nVariables:`);
+      for (const variable of plan.variables) {
+        console.log(`  ${variable.placeholder} — ${variable.description}`);
+      }
+    }
     if (unreplaced.size > 0) console.log(`\nUnreplaced variables: ${[...unreplaced].join(", ")}`);
     if (!options.handle && unreplaced.has("{{HANDLE}}")) {
       console.log(`\nTip: Pass --handle <your-handle> to replace {{HANDLE}} automatically`);
     }
     return plan;
-  } else {
-    // Output full JSON plan for Zo to consume
-    if (unreplaced.size > 0 && !options.handle) {
-      console.error(`Warning: Unreplaced variables found: ${[...unreplaced].join(", ")}`);
-      if (unreplaced.has("{{HANDLE}}")) {
-        console.error(`Pass --handle <your-handle> to replace {{HANDLE}}`);
-      }
+  }
+
+  if (unreplaced.size > 0 && !options.handle) {
+    console.error(`Warning: Unreplaced variables found: ${[...unreplaced].join(", ")}`);
+    if (unreplaced.has("{{HANDLE}}")) {
+      console.error(`Pass --handle <your-handle> to replace {{HANDLE}}`);
     }
-    return plan;
   }
-}
-
-if (import.meta.main) {
-  const { parseArgs } = await import("util");
-  const { values } = parseArgs({
-    args: Bun.argv.slice(2),
-    options: {
-      file: { type: "string", short: "f" },
-      handle: { type: "string" },
-      preview: { type: "boolean", short: "p" },
-      help: { type: "boolean", short: "h" },
-    },
-  });
-
-  if (values.help) {
-    console.log(`zopack import -- Parse a .zopack.md file and output a deployment plan
-
-Usage:
-  bun import.ts --file <path> [options]
-
-Options:
-  -f, --file     Path to the .zopack.md file (required)
-  --handle       Your zo.space handle for variable replacement
-  -p, --preview  Preview the plan without outputting full code
-  -h, --help     Show this help`);
-    process.exit(0);
-  }
-
-  if (!values.file) {
-    console.error("Error: --file is required. Use --help for usage.");
-    process.exit(1);
-  }
-
-  try {
-    const plan = await importPack({
-      file: values.file,
-      handle: values.handle,
-      preview: values.preview,
-    });
-    if (plan && !values.preview) {
-      console.log(JSON.stringify(plan, null, 2));
-    }
-  } catch (err: any) {
-    console.error("Import failed:", err.message);
-    process.exit(1);
-  }
+  return plan;
 }

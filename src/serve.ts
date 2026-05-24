@@ -5,9 +5,9 @@ import { createHash } from "crypto";
 import { Hono } from "hono";
 import type { BunPlugin } from "bun";
 import type { Context } from "hono";
-import type { RouteManifest, RouteManifestEntry } from "./route-manifest";
+import type { RouteManifest, RouteManifestEntry } from "./route-types";
 import { matchRoute } from "./route-manifest";
-import { getActivePackRevision, createZopackPlugin } from "./zopack-plugin";
+import { getActivePackRevision, zopackBuildPlugins } from "./zopack-plugin";
 
 interface ClientBundle {
   entry: RouteManifestEntry;
@@ -154,7 +154,7 @@ export async function buildClientBundles(manifest: RouteManifest, buildDir: stri
       splitting: false,
       sourcemap: "inline",
       naming: `${id}.[ext]`,
-      plugins: [createZopackPlugin(), normalizeRouteJsxRuntime(), resolveBareImportsFromCli()],
+      plugins: clientBuildPlugins(),
     });
 
     if (!result.success) {
@@ -194,7 +194,7 @@ export async function buildApiModules(manifest: RouteManifest, buildDir: string)
       target: "bun",
       format: "esm",
       naming: `${id}.[ext]`,
-      plugins: [createZopackPlugin(), resolveBareImportsFromCli()],
+      plugins: apiBuildPlugins(),
     });
 
     if (!result.success) {
@@ -210,6 +210,14 @@ export async function buildApiModules(manifest: RouteManifest, buildDir: string)
   }
 
   return modules;
+}
+
+function apiBuildPlugins(): BunPlugin[] {
+  return [...zopackBuildPlugins(), resolveBareImportsFromCli()];
+}
+
+function clientBuildPlugins(): BunPlugin[] {
+  return [...zopackBuildPlugins(), normalizeRouteJsxRuntime(), resolveBareImportsFromCli()];
 }
 
 function normalizeRouteJsxRuntime(): BunPlugin {

@@ -90,6 +90,24 @@ describe("pack manifest", () => {
 
     expect(() => createPackManifest(plan, "test-pack.zopack.md")).toThrow('zo.space dynamic routes use ":param"');
   });
+
+  test("rejects ambiguous pack routes", () => {
+    const plan = {
+      meta: { format: "zopack" },
+      routes: [
+        { path: "/about", route_type: "page" as const, public: true, code: "export default function A() {}" },
+        { path: "/about", route_type: "page" as const, public: true, code: "export default function B() {}" },
+      ],
+      npm_deps: [],
+      shadcn_components: [],
+      directories: [],
+      files: [],
+      secrets: [],
+      variables: [],
+    };
+
+    expect(() => createPackManifest(plan, "test-pack.zopack.md")).toThrow("Ambiguous route");
+  });
 });
 
 describe("pack plugin integration", () => {

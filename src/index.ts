@@ -1,13 +1,10 @@
 #!/usr/bin/env bun
 
 import { parseArgs } from "util";
-import { resolve } from "path";
 import { exportPack } from "./export";
 import { importPack } from "./import";
-import { createPackManifest } from "./pack-manifest";
-import { materializeSetupWorkspace } from "./setup-workspace";
-import { serveZoSpace, warnMissingNpmDeps } from "./serve";
-import { registerZopackPlugin, setActivePack, setWorkspaceRoot } from "./zopack-plugin";
+import { serveZoSpace } from "./serve";
+import { loadPackForServe, reloadPackForServe } from "./serve-pack";
 
 const args = Bun.argv.slice(2);
 const command = args[0];
@@ -148,42 +145,13 @@ Options:
   const port = parseInt(values.port || "5173", 10);
 
   try {
-    const plan = await importPack({
-      file: values.file,
-      handle: values.handle,
-    });
-
-    if (!plan) {
-      console.error("Failed to load pack.");
-      process.exit(1);
-    }
-
-    registerZopackPlugin();
-    setActivePack(plan);
-    const workspaceDir = materializeSetupWorkspace(plan);
-    setWorkspaceRoot(workspaceDir);
-    warnMissingNpmDeps(plan.npm_deps);
-
-    const packFile = resolve(process.cwd(), values.file);
-    let manifest = createPackManifest(plan, packFile);
+    const { packFile, manifest } = await loadPackForServe(values.file, values.handle);
 
     await serveZoSpace({
       manifest,
       port,
       packFile,
-      reloadPack: async () => {
-        const reloaded = await importPack({
-          file: values.file!,
-          handle: values.handle,
-        });
-        if (!reloaded) {
-          throw new Error("Failed to reload pack.");
-        }
-        setActivePack(reloaded);
-        materializeSetupWorkspace(reloaded);
-        manifest = createPackManifest(reloaded, packFile);
-        return manifest;
-      },
+      reloadPack: () => reloadPackForServe(values.file!, packFile, values.handle),
     });
   } catch (err: any) {
     console.error(`Serve failed: ${err.message}`);
