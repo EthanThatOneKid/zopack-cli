@@ -1,5 +1,10 @@
 import { existsSync } from "fs";
 import { pathToFileURL } from "url";
+import {
+  collapseIndexSegment,
+  routePattern,
+  validateRoutePathSegments,
+} from "./route-utils";
 
 export type RouteType = "api" | "page";
 
@@ -65,7 +70,7 @@ export function matchRoute(manifest: RouteManifest, pathname: string, routeType?
 function routeFileToEntry(routesDir: string, file: string): RouteManifestEntry {
   const withoutExt = file.replace(ROUTE_FILE_REGEX, "");
   const segments = withoutExt.split("/").filter(Boolean);
-  validateSegments(file, segments);
+  validateRoutePathSegments(file, segments);
 
   const isApi = segments[0] === "api";
   const route_type: RouteType = isApi ? "api" : "page";
@@ -85,34 +90,6 @@ function routeFileToEntry(routesDir: string, file: string): RouteManifestEntry {
   };
 }
 
-function collapseIndexSegment(segments: string[]): string[] {
-  if (segments.length === 1 && segments[0] === "index") return [];
-  if (segments.at(-1) === "index") return segments.slice(0, -1);
-  return segments;
-}
-
-function validateSegments(file: string, segments: string[]) {
-  if (segments.length === 0) {
-    throw new Error(`Invalid route file: ${file}`);
-  }
-
-  for (const segment of segments) {
-    if (/^\[.+\]$/.test(segment)) {
-      throw new Error(
-        `Unsupported route segment "${segment}" in ${file}. zo.space dynamic routes use ":param", not "[param]".`,
-      );
-    }
-
-    if (segment.includes("[") || segment.includes("]")) {
-      throw new Error(`Unsupported bracket characters in route file: ${file}`);
-    }
-
-    if (segment.startsWith(":") && !/^:[A-Za-z_][A-Za-z0-9_]*$/.test(segment)) {
-      throw new Error(`Invalid dynamic route segment "${segment}" in ${file}`);
-    }
-  }
-}
-
 function validateRouteManifest(entries: RouteManifestEntry[]) {
   const seen = new Map<string, RouteManifestEntry>();
   for (const entry of entries) {
@@ -123,31 +100,6 @@ function validateRouteManifest(entries: RouteManifestEntry[]) {
     }
     seen.set(key, entry);
   }
-}
-
-function routePattern(path: string): { pattern: RegExp; paramNames: string[] } {
-  if (path === "/") return { pattern: /^\/$/, paramNames: [] };
-
-  const paramNames: string[] = [];
-  const parts = path
-    .split("/")
-    .filter(Boolean)
-    .map((part) => {
-      if (part.startsWith(":")) {
-        paramNames.push(part.slice(1));
-        return "([^/]+)";
-      }
-      return escapeRegExp(part);
-    });
-
-  return {
-    pattern: new RegExp(`^/${parts.join("/")}$`),
-    paramNames,
-  };
-}
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function pathToFileImport(path: string): string {

@@ -5,16 +5,18 @@ A standalone Bun CLI for **packaging**, **importing**, and **locally emulating**
 ## Workflow
 
 ```
-Zo (create space + repo) → GitHub repo → Clone locally → import → serve → edit locally → push → Zo pull + update
+Zo export → .zopack.md → zopack serve --file pack.zopack.md → edit pack → push → Zo pull + update
 ```
 
 1. **create in Zo** — create the space and the GitHub repo from Zo, using natural language if you want
 2. **clone locally** — move to a physical machine and clone the repo with `git clone`
-3. **import** — parse the pack locally with `zopack import`, then materialize the matching `routes/` files
-4. **serve** — run the imported routes locally with `zopack serve`
-5. **edit locally** — make surgical source changes in `routes/`
+3. **preview** — review the pack with `zopack import --file <pack>.zopack.md --preview`
+4. **serve** — run routes directly from the pack with `zopack serve --file <pack>.zopack.md`
+5. **edit locally** — edit route code inside the `.zopack.md` file (or re-export from Zo)
 6. **push** — commit and push the local changes back to GitHub
 7. **pull in Zo** — tell Zo to pull the GitHub changes and update the live Zo space to match
+
+Route code lives inside the pack. Bun plugins load routes as virtual in-memory modules — no `routes/` directory is required.
 
 ## Install
 
@@ -22,7 +24,7 @@ Zo (create space + repo) → GitHub repo → Clone locally → import → serve 
 
 ```bash
 bun install
-bun src/index.ts serve   # or: bun start
+bun src/index.ts serve --file examples/example-pack.zopack.md
 ```
 
 ### Global install (use from any Zo space repo)
@@ -37,11 +39,8 @@ Verify:
 
 ```bash
 zopack --help
-cd /path/to/etok.zo.space
-zopack serve
+zopack serve --file my-space.zopack.md
 ```
-
-`zopack serve` reads `routes/` from the **current working directory**, not from the CLI install location.
 
 `bun link` registers this package and links the `zopack` binary into Bun's global bin directory. Run `bun pm bin -g` to find it. On Windows, add that directory to your user `PATH` and open a new terminal if `zopack` is not found.
 
@@ -70,44 +69,31 @@ cd <repo>
 
 If you prefer HTTPS, use that instead. The point is to get the repo onto a machine where you can work even if Zo is temporarily unavailable, offline, or slow.
 
-### Restore Zo space source locally
+### Preview and serve the pack locally
 
-Run `zopack import` from your project clone (requires [global install](#global-install-use-from-any-zo-space-repo)):
+Review the pack before serving (especially for packs from untrusted sources):
 
 ```bash
 zopack import --file <pack-name>.zopack.md --handle <your-handle> --preview
 ```
 
-That command prints a JSON plan. It does not write files by itself, so use the plan to create the matching `routes/` files in your project repo.
-
-Route paths map to filenames like this:
-
-- `/` -> `routes/index.tsx`
-- `/about` -> `routes/about.tsx`
-- `/zo-space-10print` -> `routes/zo-space-10print.tsx`
-- `/api/hello` -> `routes/api/hello.ts`
-
-At this point, the repo should contain the route files you need to work on locally.
-
-### Run imported routes locally
-
-Start the local emulator:
+Start the local emulator directly from the pack:
 
 ```bash
-zopack serve
+zopack serve --file <pack-name>.zopack.md --handle <your-handle>
 ```
 
-This gives you a local Zo-like environment where you can edit and verify the route source files without depending on the cloud being available.
+The server watches the pack file and reloads routes when you save changes.
 
 ### Make visual or behavior changes locally
 
-Edit the route files directly in `routes/`. Keep the changes surgical and source-driven. This is the part where you work like a normal local codebase instead of relying on natural language for every change.
+Edit route code inside the `.zopack.md` file (inside the fenced code blocks under `## Routes`), or re-export from Zo and replace the pack.
 
 Example flow:
 
 ```bash
-# edit routes/index.tsx
-zopack serve
+# edit my-space.zopack.md
+zopack serve --file my-space.zopack.md
 ```
 
 If you see React hook errors in a demo page, simplify the component to a plain render first. This repo's local emulator is happiest when the route is straightforward and hook-free.
@@ -138,7 +124,7 @@ Once this loop is established, you can keep moving back and forth:
 2. Local machine for editing, serving, and testing
 3. GitHub for sync, history, and recovery
 
-That gives you a practical Zo space workflow that still works when Zo is unavailable for a while, when the network is flaky, or when you want to work directly against source files instead of driving everything through natural language.
+That gives you a practical Zo space workflow that still works when Zo is unavailable for a while, when the network is flaky, or when you want to work directly against the pack instead of driving everything through natural language.
 
 ## Commands
 
@@ -159,39 +145,41 @@ Reads a JSON array of route objects:
 # Preview the plan
 zopack import --file my-space.zopack.md --preview
 
-# Output full JSON plan for local or automated use
+# Output full JSON plan for Zo agent deployment
 zopack import --file my-space.zopack.md --handle etok
 ```
+
+`zopack import` outputs a JSON deployment plan for Zo agents. It does not start a server.
 
 ### `zopack serve` local emulator
 
 ```bash
-zopack serve              # default port 5173
-zopack serve --port 8080  # custom port
+zopack serve --file my-space.zopack.md              # default port 5173
+zopack serve --file my-space.zopack.md --port 8080  # custom port
+zopack serve --file my-space.zopack.md --handle etok
 ```
 
-Serves the local `routes/` directory with production-faithful behavior. Page routes may use `.ts` or `.tsx` (Zo spaces sometimes ship JSX in `.ts` files).
+Serves routes from a `.zopack.md` pack via Bun plugins. Setup directories and files from the pack's `## Setup` section are materialized into `.zopack-workspace/` (data scaffolding only — route code stays virtual).
 
-| File | Route |
+| Route in pack | Virtual module |
 |------|-------|
-| `routes/index.tsx` | `/` |
-| `routes/index.ts` | `/` |
-| `routes/about.tsx` | `/about` |
-| `routes/blog/index.tsx` | `/blog` |
-| `routes/api/hello.ts` | `/api/hello` |
-| `routes/api/users/:id.ts` | `/api/users/:id` |
+| `/` (page) | `zopack-route:///index.tsx` |
+| `/about` (page) | `zopack-route:///about.tsx` |
+| `/api/hello` (api) | `zopack-route:///api/hello.ts` |
+| `/api/users/:id` (api) | `zopack-route:///api/users/:id.ts` |
 
 **Route restrictions:**
 - `:param` dynamic segments only — `[param]` (Next.js style) is rejected
 - Duplicate route paths are rejected at startup
 - API routes use real Hono (matches zo.space production exactly)
-- Page routes are bundled with React Router for client-side routing
+- Page routes are bundled for client-side rendering
 
 ## Development
 
 ```bash
-bun test   # run route manifest tests
-bun start  # start serve (alias: bun src/index.ts serve)
+bun test   # run pack manifest and serve tests
+bun examples/emulate.ts   # export → import → build round trip
+bun src/index.ts serve --file examples/example-pack.zopack.md
 ```
 
 ## Project structure
@@ -201,9 +189,14 @@ src/
   index.ts              # CLI entrypoint (export, import, serve commands)
   export.ts             # export command logic
   import.ts             # import command logic
-  route-manifest.ts     # route discovery + :param validation + duplicate detection
-  route-manifest.test.ts
-  serve.ts              # production-faithful local server (Hono + React Router)
+  zopack-plugin.ts      # Bun plugin for .zopack.md and virtual route modules
+  pack-manifest.ts      # route manifest from ParsedPack
+  route-manifest.ts     # filesystem route discovery (legacy/tests)
+  route-utils.ts        # shared route validation helpers
+  setup-workspace.ts    # materialize pack Setup section locally
+  serve.ts              # production-faithful local server (Hono + React)
 examples/
-  routes/               # example routes (index.tsx + api/hello.ts)
+  example-pack.zopack.md
+  routes.json           # sample route JSON for export demos
+globals.d.ts            # TypeScript declarations for *.zopack.md imports
 ```

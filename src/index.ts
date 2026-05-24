@@ -1,10 +1,13 @@
 #!/usr/bin/env bun
 
 import { parseArgs } from "util";
+import { resolve } from "path";
 import { exportPack } from "./export";
 import { importPack } from "./import";
-import { createRouteManifest } from "./route-manifest";
-import { serveZoSpace } from "./serve";
+import { createPackManifest } from "./pack-manifest";
+import { materializeSetupWorkspace } from "./setup-workspace";
+import { serveZoSpace, warnMissingNpmDeps } from "./serve";
+import { registerZopackPlugin, setActivePack, setWorkspaceRoot } from "./zopack-plugin";
 
 const args = Bun.argv.slice(2);
 const command = args[0];
@@ -112,38 +115,80 @@ Options:
   }
 
 } else if (command === "serve" || !command) {
-  // SSR server mode
   const { values } = parseArgs({
     args: command === "serve" ? args.slice(1) : args,
     options: {
+      file: { type: "string", short: "f" },
+      handle: { type: "string" },
       port: { type: "string", short: "p", default: "5173" },
       help: { type: "boolean", short: "h" },
     },
   });
 
   if (values.help) {
-    console.log(`zopack serve -- Run the Zo Space Bun SSR server locally
+    console.log(`zopack serve -- Run the Zo Space Bun SSR server locally from a .zopack.md pack
 
 Usage:
-  bun index.ts serve [options]
-  bun index.ts [options] (default)
+  bun index.ts serve --file <pack.zopack.md> [options]
+  bun index.ts --file <pack.zopack.md> [options] (default)
 
 Options:
-  -p, --port   Port to listen on (default: 5173)
-  -h, --help   Show this help`);
+  -f, --file     Path to the .zopack.md file (required)
+  --handle       Your zo.space handle for {{HANDLE}} replacement
+  -p, --port     Port to listen on (default: 5173)
+  -h, --help     Show this help`);
     process.exit(0);
   }
 
-  const port = parseInt(values.port || "5173", 10);
-  let manifest;
-  try {
-    manifest = createRouteManifest();
-  } catch (err: any) {
-    console.error(`Route manifest failed: ${err.message}`);
+  if (!values.file) {
+    console.error("Error: --file is required. Use --help for serve.");
     process.exit(1);
   }
 
-  await serveZoSpace({ manifest, port });
+  const port = parseInt(values.port || "5173", 10);
+
+  try {
+    const plan = await importPack({
+      file: values.file,
+      handle: values.handle,
+    });
+
+    if (!plan) {
+      console.error("Failed to load pack.");
+      process.exit(1);
+    }
+
+    registerZopackPlugin();
+    setActivePack(plan);
+    const workspaceDir = materializeSetupWorkspace(plan);
+    setWorkspaceRoot(workspaceDir);
+    warnMissingNpmDeps(plan.npm_deps);
+
+    const packFile = resolve(process.cwd(), values.file);
+    let manifest = createPackManifest(plan, packFile);
+
+    await serveZoSpace({
+      manifest,
+      port,
+      packFile,
+      reloadPack: async () => {
+        const reloaded = await importPack({
+          file: values.file!,
+          handle: values.handle,
+        });
+        if (!reloaded) {
+          throw new Error("Failed to reload pack.");
+        }
+        setActivePack(reloaded);
+        materializeSetupWorkspace(reloaded);
+        manifest = createPackManifest(reloaded, packFile);
+        return manifest;
+      },
+    });
+  } catch (err: any) {
+    console.error(`Serve failed: ${err.message}`);
+    process.exit(1);
+  }
 
 } else {
   console.log(`zopack -- Unified CLI for Zo routes packaging and local SSR preview

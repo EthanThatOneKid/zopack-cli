@@ -1,12 +1,13 @@
-import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, watchFile, unwatchFile, writeFileSync } from "fs";
 import { basename, dirname, join, resolve } from "path";
-import { fileURLToPath } from "url";
+import { fileURLToPath, pathToFileURL } from "url";
 import { createHash } from "crypto";
 import { Hono } from "hono";
 import type { BunPlugin } from "bun";
 import type { Context } from "hono";
 import type { RouteManifest, RouteManifestEntry } from "./route-manifest";
 import { matchRoute } from "./route-manifest";
+import { getActivePackRevision, createZopackPlugin } from "./zopack-plugin";
 
 interface ClientBundle {
   entry: RouteManifestEntry;
@@ -14,9 +15,11 @@ interface ClientBundle {
   publicPath: string;
 }
 
-interface ServeOptions {
+export interface ServeOptions {
   manifest: RouteManifest;
   port: number;
+  packFile?: string;
+  reloadPack?: () => Promise<RouteManifest>;
 }
 
 const JS_CONTENT_TYPE = "text/javascript; charset=UTF-8";
@@ -33,18 +36,34 @@ const NODE_BUILTINS = new Set([
 /** Always bundle from zopack-cli so a space repo's node_modules cannot duplicate React. */
 const CLI_PEER_DEPS = new Set(["react", "react-dom", "react-dom/client", "react-router", "react-router-dom"]);
 
-export async function serveZoSpace({ manifest, port }: ServeOptions) {
+export async function serveZoSpace({ manifest, port, packFile, reloadPack }: ServeOptions) {
   const buildDir = join(CLI_ROOT, ".zopack-build", `serve-${process.pid}`);
-  const clientBundles = await buildClientBundles(manifest, buildDir);
-  const apiApp = createApiApp(manifest);
+  let currentManifest = manifest;
+  let clientBundles = await buildClientBundles(currentManifest, buildDir);
+  let apiImports = await buildApiModules(currentManifest, buildDir);
+  let apiApp = createApiApp(currentManifest, apiImports);
 
-  console.log(`Loaded ${manifest.entries.length} zo.space routes from ${manifest.routesDir}`);
-  for (const entry of manifest.entries) {
+  console.log(`Loaded ${currentManifest.entries.length} zo.space routes from ${currentManifest.routesDir}`);
+  for (const entry of currentManifest.entries) {
     console.log(`  ${entry.path} (${entry.route_type}) -> ${entry.file}`);
   }
   console.log(`Zo Space local emulator listening on http://localhost:${port}/`);
 
-  const siteLabel = basename(dirname(manifest.routesDir));
+  const siteLabel = basename(currentManifest.routesDir).replace(/\.zopack\.md$/, "") || "zopack";
+
+  if (packFile && reloadPack) {
+    watchFile(packFile, { interval: 500 }, async () => {
+      try {
+        currentManifest = await reloadPack();
+        clientBundles = await buildClientBundles(currentManifest, buildDir);
+        apiImports = await buildApiModules(currentManifest, buildDir);
+        apiApp = createApiApp(currentManifest, apiImports);
+        console.log(`Reloaded pack: ${currentManifest.entries.length} routes from ${packFile}`);
+      } catch (err) {
+        console.error("Failed to reload pack:", err);
+      }
+    });
+  }
 
   Bun.serve({
     port,
@@ -59,11 +78,11 @@ export async function serveZoSpace({ manifest, port }: ServeOptions) {
         return serveFavicon();
       }
 
-      if (matchRoute(manifest, url.pathname, "api")) {
+      if (matchRoute(currentManifest, url.pathname, "api")) {
         return apiApp.fetch(req);
       }
 
-      const pageMatch = matchRoute(manifest, url.pathname, "page");
+      const pageMatch = matchRoute(currentManifest, url.pathname, "page");
       if (!pageMatch) {
         return new Response("404 Not Found", { status: 404 });
       }
@@ -78,21 +97,29 @@ export async function serveZoSpace({ manifest, port }: ServeOptions) {
       });
     },
   });
+
+  if (packFile) {
+    process.on("exit", () => unwatchFile(packFile));
+  }
 }
 
-function createApiApp(manifest: RouteManifest): Hono {
+function createApiApp(manifest: RouteManifest, apiImports: Map<string, string>): Hono {
   const app = new Hono();
 
   for (const entry of manifest.entries.filter((route) => route.route_type === "api")) {
-    app.all(entry.path, async (c) => invokeApiRoute(entry, c));
+    const importPath = apiImports.get(entry.path);
+    if (!importPath) {
+      throw new Error(`Missing built API module for ${entry.path}`);
+    }
+    app.all(entry.path, async (c) => invokeApiRoute(entry, c, importPath));
   }
 
   return app;
 }
 
-async function invokeApiRoute(entry: RouteManifestEntry, c: Context): Promise<Response> {
+async function invokeApiRoute(entry: RouteManifestEntry, c: Context, importPath: string): Promise<Response> {
   try {
-    const mod = await import(withMtime(entry.importPath, entry.file));
+    const mod = await import(withRevision(importPath));
     if (typeof mod.default !== "function") {
       return c.text(`Route ${entry.path} is missing a default export`, 500);
     }
@@ -127,7 +154,7 @@ export async function buildClientBundles(manifest: RouteManifest, buildDir: stri
       splitting: false,
       sourcemap: "inline",
       naming: `${id}.[ext]`,
-      plugins: [normalizeRouteJsxRuntime(), resolveBareImportsFromCli()],
+      plugins: [createZopackPlugin(), normalizeRouteJsxRuntime(), resolveBareImportsFromCli()],
     });
 
     if (!result.success) {
@@ -149,13 +176,53 @@ export async function buildClientBundles(manifest: RouteManifest, buildDir: stri
   return bundles;
 }
 
+export async function buildApiModules(manifest: RouteManifest, buildDir: string): Promise<Map<string, string>> {
+  const modules = new Map<string, string>();
+  const apiDir = join(buildDir, "api");
+  mkdirSync(apiDir, { recursive: true });
+
+  for (const entry of manifest.entries.filter((route) => route.route_type === "api")) {
+    const id = bundleId(entry);
+    const stub = join(apiDir, `${id}.ts`);
+    const outfile = join(apiDir, `${id}.js`);
+
+    writeFileSync(stub, `export { default } from ${JSON.stringify(entry.importPath)};\n`, "utf8");
+
+    const result = await Bun.build({
+      entrypoints: [stub],
+      outdir: apiDir,
+      target: "bun",
+      format: "esm",
+      naming: `${id}.[ext]`,
+      plugins: [createZopackPlugin(), resolveBareImportsFromCli()],
+    });
+
+    if (!result.success) {
+      const messages = result.logs.map((log) => log.message).join("\n");
+      throw new Error(`Failed to build API module for ${entry.path}:\n${messages}`);
+    }
+
+    if (!existsSync(outfile)) {
+      throw new Error(`Expected API module was not written: ${outfile}`);
+    }
+
+    modules.set(entry.path, pathToFileURL(outfile).href);
+  }
+
+  return modules;
+}
+
 function normalizeRouteJsxRuntime(): BunPlugin {
   return {
     name: "zopack-normalize-jsx-runtime",
     setup(build) {
       build.onLoad({ filter: /\.([cm]?tsx?|jsx)$/ }, async (args) => {
         const normalizedPath = args.path.replaceAll("\\", "/");
-        if (normalizedPath.includes("/node_modules/") || args.path.startsWith(CLI_ROOT)) {
+        if (
+          normalizedPath.includes("/node_modules/") ||
+          args.path.startsWith(CLI_ROOT) ||
+          args.namespace === "zopack-route"
+        ) {
           return undefined;
         }
 
@@ -206,10 +273,9 @@ function serveClientBundle(bundles: Map<string, ClientBundle>, pathname: string)
 }
 
 function clientEntrypoint(entry: RouteManifestEntry): string {
-  // Each bundle serves a single page; the server already picked the route.
   return `import React from "react";
 import { createRoot } from "react-dom/client";
-import Page from ${JSON.stringify(entry.file)};
+import Page from ${JSON.stringify(entry.importPath)};
 
 const root = document.getElementById("root");
 if (!root) {
@@ -245,10 +311,24 @@ function serveFavicon(): Response {
 }
 
 function bundleId(entry: RouteManifestEntry): string {
-  return createHash("sha256").update(`${entry.path}:${entry.file}`).digest("hex").slice(0, 16);
+  return createHash("sha256").update(`${entry.path}:${entry.file}:${getActivePackRevision()}`).digest("hex").slice(0, 16);
 }
 
-function withMtime(importPath: string, file: string): string {
-  const mtimeMs = statSync(file).mtimeMs;
-  return `${importPath}?mtime=${mtimeMs}`;
+function withRevision(importPath: string): string {
+  return `${importPath}?rev=${getActivePackRevision()}`;
+}
+
+export function warnMissingNpmDeps(npmDeps: string[]): void {
+  for (const dep of npmDeps) {
+    const packageName = dep.startsWith("@") ? dep.split("/").slice(0, 2).join("/") : dep.split("/")[0];
+    try {
+      Bun.resolveSync(packageName, CLI_ROOT);
+    } catch {
+      try {
+        Bun.resolveSync(packageName, process.cwd());
+      } catch {
+        console.warn(`Missing npm dependency "${dep}". Install it with: bun add ${dep}`);
+      }
+    }
+  }
 }

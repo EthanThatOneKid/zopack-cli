@@ -1,11 +1,16 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, rmSync, writeFileSync, mkdirSync } from "fs";
+import { existsSync, mkdtempSync, rmSync } from "fs";
 import { tmpdir } from "os";
-import { join } from "path";
-import { createRouteManifest } from "./route-manifest";
+import { join, resolve } from "path";
+import { importPack } from "./import";
+import { createPackManifest } from "./pack-manifest";
 import { buildClientBundles } from "./serve";
+import { registerZopackPlugin, setActivePack, setWorkspaceRoot } from "./zopack-plugin";
+
+registerZopackPlugin();
 
 const tempRoots: string[] = [];
+const EXAMPLE_PACK = resolve(import.meta.dir, "../examples/example-pack.zopack.md");
 
 afterEach(() => {
   while (tempRoots.length > 0) {
@@ -14,14 +19,13 @@ afterEach(() => {
 });
 
 describe("client bundles", () => {
-  test("builds page routes written as .ts with JSX", async () => {
-    const root = makeRoutes({
-      "index.ts": `export default function Home() {
-  return <main>ok</main>;
-}`,
-    });
+  test("builds page routes from a zopack pack", async () => {
+    const plan = await importPack({ file: EXAMPLE_PACK });
+    registerZopackPlugin();
+    setActivePack(plan!);
+    setWorkspaceRoot(null);
 
-    const manifest = createRouteManifest(root);
+    const manifest = createPackManifest(plan!, EXAMPLE_PACK);
     const buildDir = mkdtempSync(join(tmpdir(), "zopack-build-"));
     tempRoots.push(buildDir);
 
@@ -34,14 +38,32 @@ describe("client bundles", () => {
   });
 
   test("builds page routes that import from https URLs", async () => {
-    const root = makeRoutes({
-      "three-page.tsx": `import * as THREE from "https://esm.sh/three@0.175.0";
+    const plan = {
+      meta: { format: "zopack" },
+      routes: [
+        {
+          path: "/three-page",
+          route_type: "page" as const,
+          public: true,
+          code: `import * as THREE from "https://esm.sh/three@0.175.0";
 export default function ThreePage() {
   return <main>{String(!!THREE.Scene)}</main>;
 }`,
-    });
+        },
+      ],
+      npm_deps: [],
+      shadcn_components: [],
+      directories: [],
+      files: [],
+      secrets: [],
+      variables: [],
+    };
 
-    const manifest = createRouteManifest(root);
+    registerZopackPlugin();
+    setActivePack(plan);
+    setWorkspaceRoot(null);
+
+    const manifest = createPackManifest(plan, "three-pack.zopack.md");
     const buildDir = mkdtempSync(join(tmpdir(), "zopack-build-"));
     tempRoots.push(buildDir);
 
@@ -49,17 +71,3 @@ export default function ThreePage() {
     expect(bundles.get("/three-page")).toBeDefined();
   });
 });
-
-function makeRoutes(files: Record<string, string>): string {
-  const root = mkdtempSync(join(tmpdir(), "zopack-routes-"));
-  tempRoots.push(root);
-  const routesDir = join(root, "routes");
-
-  for (const [file, content] of Object.entries(files)) {
-    const fullPath = join(routesDir, file);
-    mkdirSync(join(fullPath, ".."), { recursive: true });
-    writeFileSync(fullPath, content);
-  }
-
-  return root;
-}

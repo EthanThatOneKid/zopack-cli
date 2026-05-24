@@ -167,12 +167,7 @@ export function replaceVariables(code: string, handle?: string): string {
   return code;
 }
 
-export async function importPack(options: ImportOptions): Promise<ParsedPack | void> {
-  const workspaceDir = existsSync("/home/workspace") ? "/home/workspace" : process.cwd();
-  const filePath = options.file.startsWith("/") || options.file.includes(":") ? options.file : `${workspaceDir}/${options.file}`;
-  
-  const raw = await Bun.file(filePath).text();
-
+export function parsePackFromContent(raw: string, handle?: string): ParsedPack {
   const { meta, body } = parseFrontmatter(raw);
 
   if (meta.format !== "zopack") {
@@ -182,15 +177,12 @@ export async function importPack(options: ImportOptions): Promise<ParsedPack | v
   const routes = parseRoutes(body);
   const { npm, shadcn } = parseDependencies(body);
   const { directories, files, secrets } = parseSetup(body);
-
-  // Apply handle replacement if provided
-  const handle = options.handle;
-  const processedRoutes = routes.map((r) => ({
-    ...r,
-    code: replaceVariables(r.code, handle),
+  const processedRoutes = routes.map((route) => ({
+    ...route,
+    code: replaceVariables(route.code, handle),
   }));
 
-  const plan: ParsedPack = {
+  return {
     meta,
     routes: processedRoutes,
     npm_deps: npm,
@@ -200,35 +192,43 @@ export async function importPack(options: ImportOptions): Promise<ParsedPack | v
     secrets,
     variables: [],
   };
+}
+
+export async function importPack(options: ImportOptions): Promise<ParsedPack | void> {
+  const workspaceDir = existsSync("/home/workspace") ? "/home/workspace" : process.cwd();
+  const filePath = options.file.startsWith("/") || options.file.includes(":") ? options.file : `${workspaceDir}/${options.file}`;
+
+  const raw = await Bun.file(filePath).text();
+  const plan = parsePackFromContent(raw, options.handle);
 
   // Check for unreplaced variables
   const unreplaced = new Set<string>();
-  for (const r of processedRoutes) {
+  for (const r of plan.routes) {
     const matches = r.code.match(/\{\{(\w+)\}\}/g);
     if (matches) for (const m of matches) unreplaced.add(m);
   }
 
   if (options.preview) {
-    console.log(`Pack: ${meta.name || "unknown"}`);
-    console.log(`Author: ${meta.author || "unknown"}`);
-    console.log(`Description: ${meta.description || "none"}`);
-    console.log(`\nRoutes (${routes.length}):`);
-    for (const r of routes) {
+    console.log(`Pack: ${plan.meta.name || "unknown"}`);
+    console.log(`Author: ${plan.meta.author || "unknown"}`);
+    console.log(`Description: ${plan.meta.description || "none"}`);
+    console.log(`\nRoutes (${plan.routes.length}):`);
+    for (const r of plan.routes) {
       console.log(`  ${r.path} (${r.route_type}, ${r.public ? "public" : "private"}) -- ${r.code.split("\n").length} lines`);
     }
-    if (npm.length > 0) console.log(`\nnpm deps: ${npm.join(", ")}`);
-    if (shadcn.length > 0) console.log(`\nComponents: ${shadcn.join(", ")}`);
-    if (directories.length > 0) console.log(`\nDirectories: ${directories.join(", ")}`);
-    if (files.length > 0) console.log(`\nFiles: ${files.map((f) => f.path).join(", ")}`);
-    if (secrets.length > 0) console.log(`\nSecrets needed: ${secrets.join(", ")}`);
+    if (plan.npm_deps.length > 0) console.log(`\nnpm deps: ${plan.npm_deps.join(", ")}`);
+    if (plan.shadcn_components.length > 0) console.log(`\nComponents: ${plan.shadcn_components.join(", ")}`);
+    if (plan.directories.length > 0) console.log(`\nDirectories: ${plan.directories.join(", ")}`);
+    if (plan.files.length > 0) console.log(`\nFiles: ${plan.files.map((f) => f.path).join(", ")}`);
+    if (plan.secrets.length > 0) console.log(`\nSecrets needed: ${plan.secrets.join(", ")}`);
     if (unreplaced.size > 0) console.log(`\nUnreplaced variables: ${[...unreplaced].join(", ")}`);
-    if (!handle && unreplaced.has("{{HANDLE}}")) {
+    if (!options.handle && unreplaced.has("{{HANDLE}}")) {
       console.log(`\nTip: Pass --handle <your-handle> to replace {{HANDLE}} automatically`);
     }
     return plan;
   } else {
     // Output full JSON plan for Zo to consume
-    if (unreplaced.size > 0 && !handle) {
+    if (unreplaced.size > 0 && !options.handle) {
       console.error(`Warning: Unreplaced variables found: ${[...unreplaced].join(", ")}`);
       if (unreplaced.has("{{HANDLE}}")) {
         console.error(`Pass --handle <your-handle> to replace {{HANDLE}}`);

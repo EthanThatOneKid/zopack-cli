@@ -1,10 +1,11 @@
 node_modules/
 .zopack-build/
+.zopack-workspace/
 .DS_Store
 .idea/
 .vscode/
 *.local
 examples/emulated-pack.zopack.md
 
-# Live-synced routes from zo.space (use: bun src/sync.ts --force to re-pull)
+# Legacy filesystem routes (pack-based serve is the default workflow)
 routes/

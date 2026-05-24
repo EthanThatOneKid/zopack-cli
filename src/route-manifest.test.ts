@@ -32,7 +32,7 @@ describe("route manifest", () => {
     ]);
   });
 
-  test("matches Hono-style dynamic params", () => {
+  test.skipIf(process.platform === "win32")("matches Hono-style dynamic params", () => {
     const root = makeRoutes({
       "api/users/:id.ts": "export default function User() {}",
     });
