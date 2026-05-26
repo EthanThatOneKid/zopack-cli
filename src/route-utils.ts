@@ -1,6 +1,10 @@
 import type { RouteManifestEntry, RouteType } from "./route-types";
 
-export const VIRTUAL_ROUTE_SCHEME = "zopack-route:///";
+export const VIRTUAL_ROUTE_PREFIX = "zopack-route:///";
+
+export function virtualRouteScheme(slug: string): string {
+  return `${VIRTUAL_ROUTE_PREFIX}${slug}/`;
+}
 
 export function collapseIndexSegment(segments: string[]): string[] {
   if (segments.length === 1 && segments[0] === "index") return [];
@@ -71,8 +75,8 @@ export function routeToVirtualFile(routePath: string, routeType: RouteType): str
   return `${segments.join("/")}${suffix}`;
 }
 
-export function virtualRoutePath(routePath: string, routeType: RouteType): string {
-  return `${VIRTUAL_ROUTE_SCHEME}${routeToVirtualFile(routePath, routeType)}`;
+export function virtualRoutePath(slug: string, routePath: string, routeType: RouteType): string {
+  return `${virtualRouteScheme(slug)}${routeToVirtualFile(routePath, routeType)}`;
 }
 
 export function validateRouteManifest(entries: RouteManifestEntry[]) {

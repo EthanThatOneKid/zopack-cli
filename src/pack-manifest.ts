@@ -8,19 +8,20 @@ import {
   virtualRoutePath,
 } from "./route-utils";
 
-export function createPackManifest(plan: ParsedPack, packFile: string): RouteManifest {
-  const entries = plan.routes.map((route) => packRouteToEntry(route, packFile));
+export function createPackManifest(plan: ParsedPack, packFile: string, slug: string): RouteManifest {
+  const entries = plan.routes.map((route) => packRouteToEntry(route, packFile, slug));
   validateRouteManifest(entries);
-  return { routesDir: packFile, entries };
+  return { slug, routesDir: packFile, entries };
 }
 
 function packRouteToEntry(
   route: ParsedPack["routes"][number],
   packFile: string,
+  slug: string,
 ): RouteManifestEntry {
   if (route.path === "/") {
     const { pattern, paramNames } = routePattern("/");
-    const virtualFile = virtualRoutePath(route.path, route.route_type);
+    const virtualFile = virtualRoutePath(slug, route.path, route.route_type);
     return {
       path: "/",
       route_type: route.route_type,
@@ -36,7 +37,7 @@ function packRouteToEntry(
 
   const path = normalizedRoutePath(segments);
   const { pattern, paramNames } = routePattern(path);
-  const virtualFile = virtualRoutePath(route.path, route.route_type);
+  const virtualFile = virtualRoutePath(slug, route.path, route.route_type);
 
   return {
     path,

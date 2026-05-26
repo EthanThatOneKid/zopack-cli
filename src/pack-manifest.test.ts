@@ -6,28 +6,19 @@ import { importPack } from "./import";
 import { createPackManifest } from "./pack-manifest";
 import { matchRoute } from "./route-manifest";
 import { buildApiModules, buildClientBundles } from "./serve";
-import { registerZopackPlugin, setActivePack, setWorkspaceRoot } from "./zopack-plugin";
+import { registerPack, unregisterPack, registerZopackPlugin } from "./zopack-plugin";
 
 registerZopackPlugin();
 
 const EXAMPLE_PACK = resolve(import.meta.dir, "../examples/example-pack.zopack.md");
+const TEST_SLUG = "test";
 const tempRoots: string[] = [];
 
 afterEach(() => {
   while (tempRoots.length > 0) {
     rmSync(tempRoots.pop()!, { recursive: true, force: true });
   }
-  setActivePack({
-    meta: {},
-    routes: [],
-    npm_deps: [],
-    shadcn_components: [],
-    directories: [],
-    files: [],
-    secrets: [],
-    variables: [],
-  });
-  setWorkspaceRoot(null);
+  unregisterPack(TEST_SLUG);
 });
 
 describe("pack manifest", () => {
@@ -35,7 +26,7 @@ describe("pack manifest", () => {
     const plan = await importPack({ file: EXAMPLE_PACK });
     expect(plan).toBeDefined();
 
-    const manifest = createPackManifest(plan!, EXAMPLE_PACK);
+    const manifest = createPackManifest(plan!, EXAMPLE_PACK, TEST_SLUG);
     expect(manifest.entries.map((entry) => [entry.path, entry.route_type])).toEqual([
       ["/", "page"],
       ["/api/hello", "api"],
@@ -62,7 +53,7 @@ describe("pack manifest", () => {
       variables: [],
     };
 
-    const manifest = createPackManifest(plan, "test-pack.zopack.md");
+    const manifest = createPackManifest(plan, "test-pack.zopack.md", TEST_SLUG);
     const routeMatch = matchRoute(manifest, "/api/users/ethan", "api");
 
     expect(routeMatch?.entry.path).toBe("/api/users/:id");
@@ -88,7 +79,7 @@ describe("pack manifest", () => {
       variables: [],
     };
 
-    expect(() => createPackManifest(plan, "test-pack.zopack.md")).toThrow('zo.space dynamic routes use ":param"');
+    expect(() => createPackManifest(plan, "test-pack.zopack.md", TEST_SLUG)).toThrow('zo.space dynamic routes use ":param"');
   });
 
   test("rejects ambiguous pack routes", () => {
@@ -106,17 +97,16 @@ describe("pack manifest", () => {
       variables: [],
     };
 
-    expect(() => createPackManifest(plan, "test-pack.zopack.md")).toThrow("Ambiguous route");
+    expect(() => createPackManifest(plan, "test-pack.zopack.md", TEST_SLUG)).toThrow("Ambiguous route");
   });
 });
 
 describe("pack plugin integration", () => {
   test("loads example pack as virtual route modules", async () => {
     const plan = await importPack({ file: EXAMPLE_PACK });
-    setActivePack(plan!);
-    setWorkspaceRoot(null);
+    registerPack(TEST_SLUG, plan!, null);
 
-    const manifest = createPackManifest(plan!, EXAMPLE_PACK);
+    const manifest = createPackManifest(plan!, EXAMPLE_PACK, TEST_SLUG);
     const buildDir = mkdtempSync(join(tmpdir(), "zopack-plugin-"));
     tempRoots.push(buildDir);
 
@@ -126,5 +116,53 @@ describe("pack plugin integration", () => {
 
     const bundles = await buildClientBundles(manifest, buildDir);
     expect(bundles.get("/")).toBeDefined();
+  });
+
+  test("resolves routes from multiple registered packs independently", async () => {
+    const planA = {
+      meta: { format: "zopack" },
+      routes: [
+        { path: "/alpha", route_type: "page" as const, public: true, code: "export default function Alpha() { return <p>A</p>; }" },
+      ],
+      npm_deps: [],
+      shadcn_components: [],
+      directories: [],
+      files: [],
+      secrets: [],
+      variables: [],
+    };
+
+    const planB = {
+      meta: { format: "zopack" },
+      routes: [
+        { path: "/beta", route_type: "page" as const, public: true, code: "export default function Beta() { return <p>B</p>; }" },
+      ],
+      npm_deps: [],
+      shadcn_components: [],
+      directories: [],
+      files: [],
+      secrets: [],
+      variables: [],
+    };
+
+    registerPack("pack-a", planA, null);
+    registerPack("pack-b", planB, null);
+
+    const manifestA = createPackManifest(planA, "a.zopack.md", "pack-a");
+    const manifestB = createPackManifest(planB, "b.zopack.md", "pack-b");
+
+    const buildDir = mkdtempSync(join(tmpdir(), "zopack-multi-"));
+    tempRoots.push(buildDir);
+
+    const bundlesA = await buildClientBundles(manifestA, join(buildDir, "a"));
+    const bundlesB = await buildClientBundles(manifestB, join(buildDir, "b"));
+
+    expect(bundlesA.get("/alpha")).toBeDefined();
+    expect(bundlesA.get("/beta")).toBeUndefined();
+    expect(bundlesB.get("/beta")).toBeDefined();
+    expect(bundlesB.get("/alpha")).toBeUndefined();
+
+    unregisterPack("pack-a");
+    unregisterPack("pack-b");
   });
 });

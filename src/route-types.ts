@@ -10,6 +10,7 @@ export interface RouteManifestEntry {
 }
 
 export interface RouteManifest {
+  slug: string;
   routesDir: string;
   entries: RouteManifestEntry[];
 }

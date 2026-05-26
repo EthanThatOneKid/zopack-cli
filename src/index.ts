@@ -145,13 +145,13 @@ Options:
   const port = parseInt(values.port || "5173", 10);
 
   try {
-    const { packFile, manifest } = await loadPackForServe(values.file, values.handle);
+    const { slug, packFile, manifest } = await loadPackForServe(values.file, values.handle);
 
     await serveZoSpace({
       manifest,
       port,
       packFile,
-      reloadPack: () => reloadPackForServe(values.file!, packFile, values.handle),
+      reloadPack: () => reloadPackForServe(values.file!, packFile, slug, values.handle),
     });
   } catch (err: any) {
     console.error(`Serve failed: ${err.message}`);

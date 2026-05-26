@@ -5,27 +5,28 @@ import { join, resolve } from "path";
 import { importPack } from "./import";
 import { createPackManifest } from "./pack-manifest";
 import { buildClientBundles } from "./serve";
-import { registerZopackPlugin, setActivePack, setWorkspaceRoot } from "./zopack-plugin";
+import { registerPack, unregisterPack, registerZopackPlugin } from "./zopack-plugin";
 
 registerZopackPlugin();
 
 const tempRoots: string[] = [];
 const EXAMPLE_PACK = resolve(import.meta.dir, "../examples/example-pack.zopack.md");
+const TEST_SLUG = "test";
 
 afterEach(() => {
   while (tempRoots.length > 0) {
     rmSync(tempRoots.pop()!, { recursive: true, force: true });
   }
+  unregisterPack(TEST_SLUG);
 });
 
 describe("client bundles", () => {
   test("builds page routes from a zopack pack", async () => {
     const plan = await importPack({ file: EXAMPLE_PACK });
     registerZopackPlugin();
-    setActivePack(plan!);
-    setWorkspaceRoot(null);
+    registerPack(TEST_SLUG, plan!, null);
 
-    const manifest = createPackManifest(plan!, EXAMPLE_PACK);
+    const manifest = createPackManifest(plan!, EXAMPLE_PACK, TEST_SLUG);
     const buildDir = mkdtempSync(join(tmpdir(), "zopack-build-"));
     tempRoots.push(buildDir);
 
@@ -60,10 +61,9 @@ export default function ThreePage() {
     };
 
     registerZopackPlugin();
-    setActivePack(plan);
-    setWorkspaceRoot(null);
+    registerPack(TEST_SLUG, plan, null);
 
-    const manifest = createPackManifest(plan, "three-pack.zopack.md");
+    const manifest = createPackManifest(plan, "three-pack.zopack.md", TEST_SLUG);
     const buildDir = mkdtempSync(join(tmpdir(), "zopack-build-"));
     tempRoots.push(buildDir);
 

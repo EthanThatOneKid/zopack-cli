@@ -7,7 +7,7 @@ import type { BunPlugin } from "bun";
 import type { Context } from "hono";
 import type { RouteManifest, RouteManifestEntry } from "./route-types";
 import { matchRoute } from "./route-manifest";
-import { getActivePackRevision, zopackBuildPlugins } from "./zopack-plugin";
+import { getPackRevision, zopackBuildPlugins } from "./zopack-plugin";
 
 interface ClientBundle {
   entry: RouteManifestEntry;
@@ -105,21 +105,22 @@ export async function serveZoSpace({ manifest, port, packFile, reloadPack }: Ser
 
 function createApiApp(manifest: RouteManifest, apiImports: Map<string, string>): Hono {
   const app = new Hono();
+  const { slug } = manifest;
 
   for (const entry of manifest.entries.filter((route) => route.route_type === "api")) {
     const importPath = apiImports.get(entry.path);
     if (!importPath) {
       throw new Error(`Missing built API module for ${entry.path}`);
     }
-    app.all(entry.path, async (c) => invokeApiRoute(entry, c, importPath));
+    app.all(entry.path, async (c) => invokeApiRoute(entry, c, importPath, slug));
   }
 
   return app;
 }
 
-async function invokeApiRoute(entry: RouteManifestEntry, c: Context, importPath: string): Promise<Response> {
+async function invokeApiRoute(entry: RouteManifestEntry, c: Context, importPath: string, slug: string): Promise<Response> {
   try {
-    const mod = await import(withRevision(importPath));
+    const mod = await import(withRevision(importPath, getPackRevision(slug)));
     if (typeof mod.default !== "function") {
       return c.text(`Route ${entry.path} is missing a default export`, 500);
     }
@@ -136,11 +137,12 @@ export async function buildClientBundles(manifest: RouteManifest, buildDir: stri
   rmSync(buildDir, { recursive: true, force: true });
   mkdirSync(buildDir, { recursive: true });
 
+  const revision = getPackRevision(manifest.slug);
   const bundles = new Map<string, ClientBundle>();
   const pages = manifest.entries.filter((entry) => entry.route_type === "page");
 
   for (const entry of pages) {
-    const id = bundleId(entry);
+    const id = bundleId(entry, revision);
     const entrypoint = join(buildDir, `${id}.tsx`);
     const outfile = join(buildDir, `${id}.js`);
 
@@ -177,12 +179,13 @@ export async function buildClientBundles(manifest: RouteManifest, buildDir: stri
 }
 
 export async function buildApiModules(manifest: RouteManifest, buildDir: string): Promise<Map<string, string>> {
+  const revision = getPackRevision(manifest.slug);
   const modules = new Map<string, string>();
   const apiDir = join(buildDir, "api");
   mkdirSync(apiDir, { recursive: true });
 
   for (const entry of manifest.entries.filter((route) => route.route_type === "api")) {
-    const id = bundleId(entry);
+    const id = bundleId(entry, revision);
     const stub = join(apiDir, `${id}.ts`);
     const outfile = join(apiDir, `${id}.js`);
 
@@ -318,12 +321,12 @@ function serveFavicon(): Response {
   });
 }
 
-function bundleId(entry: RouteManifestEntry): string {
-  return createHash("sha256").update(`${entry.path}:${entry.file}:${getActivePackRevision()}`).digest("hex").slice(0, 16);
+function bundleId(entry: RouteManifestEntry, revision: number): string {
+  return createHash("sha256").update(`${entry.path}:${entry.file}:${revision}`).digest("hex").slice(0, 16);
 }
 
-function withRevision(importPath: string): string {
-  return `${importPath}?rev=${getActivePackRevision()}`;
+function withRevision(importPath: string, revision: number): string {
+  return `${importPath}?rev=${revision}`;
 }
 
 export function warnMissingNpmDeps(npmDeps: string[]): void {
