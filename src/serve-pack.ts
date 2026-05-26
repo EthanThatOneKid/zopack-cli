@@ -1,4 +1,5 @@
 import { resolve } from "path";
+import { warnUnmetDependencies } from "./dependency-warnings";
 import { importPack } from "./import";
 import { createPackManifest } from "./pack-manifest";
 import { materializeSetupWorkspace } from "./setup-workspace";
@@ -21,6 +22,7 @@ export async function loadPackForServe(file: string, handle?: string, slugOverri
   const workspaceRoot = materializeSetupWorkspace(plan);
   registerPack(slug, plan, workspaceRoot);
   warnMissingNpmDeps(plan.npm_deps);
+  warnUnmetDependencies(plan);
 
   const packFile = resolve(process.cwd(), file);
   return {
@@ -39,5 +41,6 @@ export async function reloadPackForServe(file: string, packFile: string, slug: s
 
   const workspaceRoot = materializeSetupWorkspace(plan);
   registerPack(slug, plan, workspaceRoot);
+  warnUnmetDependencies(plan);
   return createPackManifest(plan, packFile, slug);
 }

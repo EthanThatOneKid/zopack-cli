@@ -174,6 +174,14 @@ Serves routes from a `.zopack.md` pack via Bun plugins. Setup directories and fi
 - API routes use real Hono (matches zo.space production exactly)
 - Page routes are bundled for client-side rendering
 
+## Zo platform documentation
+
+For up-to-date documentation on Zo Computer's platform (spaces, sites, services, tools, and APIs), reference the full docs at:
+
+```
+https://docs.zocomputer.com/llms-full.txt
+```
+
 ## Development
 
 ```bash
@@ -194,6 +202,7 @@ src/
   route-types.ts        # route manifest types
   route-manifest.ts     # route matching
   route-utils.ts        # shared route validation helpers
+  dependency-warnings.ts # unmet dependency detection for zopack serve
   serve-pack.ts         # pack loading for local serve
   setup-workspace.ts    # materialize pack Setup section locally
   serve.ts              # production-faithful local server (Hono + React)
