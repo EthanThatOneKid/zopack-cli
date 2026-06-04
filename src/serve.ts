@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, rmSync, watchFile, unwatchFile, writeFileSync } from "fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, watchFile, unwatchFile, writeFileSync, statSync } from "fs";
 import { basename, dirname, join, resolve } from "path";
 import { fileURLToPath, pathToFileURL } from "url";
 import { createHash } from "crypto";
@@ -84,6 +84,11 @@ export async function serveZoSpace({ manifest, port, packFile, reloadPack }: Ser
 
       const pageMatch = matchRoute(currentManifest, url.pathname, "page");
       if (!pageMatch) {
+        const workspaceDir = dirname(currentManifest.routesDir);
+        const localPath = join(workspaceDir, url.pathname);
+        if (existsSync(localPath) && statSync(localPath).isFile()) {
+          return new Response(Bun.file(localPath));
+        }
         return new Response("404 Not Found", { status: 404 });
       }
 
